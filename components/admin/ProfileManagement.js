@@ -1,0 +1,1108 @@
+// components/admin/ProfileManagement.js
+'use client';
+
+import { useState, useEffect } from 'react';
+import { 
+  Search,
+  ChevronLeft,
+  ChevronRight,
+  Edit,
+  Trash2,
+  Save,
+  X,
+  User,
+  Mail,
+  Phone,
+  MapPin,
+  Calendar,
+  Download,
+  Loader,
+  AlertCircle
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import Image from 'next/image';
+import { createBrowserClient } from '@supabase/ssr';
+
+export default function ProfileManagement() {
+  const [profiles, setProfiles] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [verificationFilter, setVerificationFilter] = useState('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({});
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
+  const [updating, setUpdating] = useState(false);
+  const [voteStats, setVoteStats] = useState({});
+  const [selectedProfiles, setSelectedProfiles] = useState([]);
+  const [bulkAction, setBulkAction] = useState('');
+
+  const ITEMS_PER_PAGE = 10;
+
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  );
+
+  const accountStatusOptions = [
+    { value: 'pending_verification', label: 'Pending Verification', color: 'yellow' },
+    { value: 'active', label: 'Active', color: 'green' },
+    { value: 'suspended', label: 'Suspended', color: 'red' },
+    { value: 'deactivated', label: 'Deactivated', color: 'gray' }
+  ];
+
+  const verificationLevelOptions = [
+    { value: 'unverified', label: 'Unverified', color: 'gray' },
+    { value: 'fully_verified', label: 'Fully Verified', color: 'blue' }
+  ];
+
+  useEffect(() => {
+    fetchProfiles();
+  }, [currentPage, statusFilter, verificationFilter, searchTerm]);
+
+  const fetchProfiles = async () => {
+    setLoading(true);
+    try {
+      let query = supabase
+        .from('profiles')
+        .select('*', { count: 'exact' });
+
+      if (searchTerm) {
+        query = query.or(`
+          username.ilike.%${searchTerm}%,
+          full_name.ilike.%${searchTerm}%,
+          email.ilike.%${searchTerm}%,
+          phone.ilike.%${searchTerm}%
+        `);
+      }
+
+      if (statusFilter !== 'all') {
+        query = query.eq('account_status', statusFilter);
+      }
+
+      if (verificationFilter !== 'all') {
+        query = query.eq('verification_level', verificationFilter);
+      }
+
+      const from = (currentPage - 1) * ITEMS_PER_PAGE;
+      const to = from + ITEMS_PER_PAGE - 1;
+
+      const { data, error, count } = await query
+        .range(from, to)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      setProfiles(data || []);
+      setTotalCount(count || 0);
+
+      if (data && data.length > 0) {
+        const profileIds = data.map(p => p.id);
+        
+        const { data: voteData } = await supabase
+          .from('vote_statistics')
+          .select('candidate_id, total_votes')
+          .in('candidate_id', profileIds);
+
+        if (voteData) {
+          const statsMap = voteData.reduce((acc, stat) => {
+            acc[stat.candidate_id] = stat.total_votes || 0;
+            return acc;
+          }, {});
+          setVoteStats(statsMap);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching profiles:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEdit = (profile) => {
+    setEditingId(profile.id);
+    setEditForm({
+      username: profile.username,
+      full_name: profile.full_name,
+      email: profile.email,
+      phone: profile.phone || '',
+      country: profile.country || '',
+      state: profile.state || '',
+      city: profile.city || '',
+      date_of_birth: profile.date_of_birth || '',
+      account_status: profile.account_status || 'pending_verification',
+      verification_level: profile.verification_level || 'unverified',
+      bio: profile.bio || '',
+      role: profile.role || 'user'
+    });
+  };
+
+  const handleSaveEdit = async (profileId) => {
+    setUpdating(true);
+    console.log('Saving profile:', profileId, editForm); // Debug log
+    
+    try {
+      // Validate required fields
+      if (!editForm.username || !editForm.email) {
+        throw new Error('Username and email are required');
+      }
+
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          username: editForm.username,
+          full_name: editForm.full_name,
+          email: editForm.email,
+          phone: editForm.phone || null,
+          country: editForm.country || null,
+          state: editForm.state || null,
+          city: editForm.city || null,
+          date_of_birth: editForm.date_of_birth || null,
+          account_status: editForm.account_status,
+          verification_level: editForm.verification_level,
+          bio: editForm.bio || null,
+          role: editForm.role,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', profileId);
+
+      if (error) {
+        console.error('Supabase error:', error);
+        throw error;
+      }
+
+      console.log('Save successful'); // Debug log
+
+      // Update local state
+      setProfiles(profiles.map(p => 
+        p.id === profileId ? { ...p, ...editForm } : p
+      ));
+      
+      setEditingId(null);
+      setEditForm({});
+      
+      // Show success message (optional)
+      alert('Profile updated successfully!');
+      
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      alert('Failed to update profile: ' + error.message);
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setEditForm({});
+  };
+
+  const handleDelete = async (profileId) => {
+    setUpdating(true);
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', profileId);
+
+      if (error) throw error;
+
+      setProfiles(profiles.filter(p => p.id !== profileId));
+      setShowDeleteConfirm(null);
+    } catch (error) {
+      console.error('Error deleting profile:', error);
+      alert('Failed to delete profile');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleBulkAction = async () => {
+    if (!bulkAction || selectedProfiles.length === 0) return;
+
+    setUpdating(true);
+    try {
+      const updates = {};
+      
+      if (bulkAction.startsWith('status_')) {
+        updates.account_status = bulkAction.replace('status_', '');
+      } else if (bulkAction.startsWith('verification_')) {
+        updates.verification_level = bulkAction.replace('verification_', '');
+      }
+
+      if (Object.keys(updates).length > 0) {
+        const { error } = await supabase
+          .from('profiles')
+          .update({ ...updates, updated_at: new Date().toISOString() })
+          .in('id', selectedProfiles);
+
+        if (error) throw error;
+
+        setProfiles(profiles.map(p => 
+          selectedProfiles.includes(p.id) ? { ...p, ...updates } : p
+        ));
+        setSelectedProfiles([]);
+        setBulkAction('');
+      }
+    } catch (error) {
+      console.error('Error in bulk action:', error);
+      alert('Failed to perform bulk action');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const exportToCSV = () => {
+    const headers = [
+      'Username', 'Full Name', 'Email', 'Phone', 'Country', 'State', 
+      'City', 'Date of Birth', 'Account Status', 'Verification Level', 
+      'Role', 'Bio', 'Total Votes'
+    ];
+    
+    const csvData = profiles.map(p => [
+      p.username,
+      p.full_name,
+      p.email,
+      p.phone || '',
+      p.country || '',
+      p.state || '',
+      p.city || '',
+      p.date_of_birth || '',
+      p.account_status || 'pending_verification',
+      p.verification_level || 'unverified',
+      p.role || 'user',
+      (p.bio || '').replace(/,/g, ';'),
+      voteStats[p.id] || 0
+    ]);
+    
+    const csv = [headers, ...csvData].map(row => row.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `profiles_export_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+  };
+
+  const getStatusBadgeColor = (status) => {
+    const option = accountStatusOptions.find(opt => opt.value === status);
+    switch(option?.color) {
+      case 'green': return 'bg-green-500/20 text-green-400 border-green-500/30';
+      case 'yellow': return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
+      case 'red': return 'bg-red-500/20 text-red-400 border-red-500/30';
+      default: return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
+    }
+  };
+
+  const getVerificationBadgeColor = (level) => {
+    const option = verificationLevelOptions.find(opt => opt.value === level);
+    switch(option?.color) {
+      case 'blue': return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
+      default: return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
+    }
+  };
+
+  const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
+
+  return (
+    <div>
+      {/* Filters Section - Responsive */}
+      <div className="bg-white/5 rounded-xl border border-white/10 p-3 sm:p-4 mb-4 sm:mb-6">
+        {/* Desktop Layout - All on one row */}
+        <div className="hidden sm:flex sm:items-center sm:gap-3">
+          {/* Search - Takes more space */}
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-white/40" />
+            <input
+              type="text"
+              placeholder="Search by username, name, email, phone..."
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="w-full pl-9 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-white/40 focus:border-burnt-orange-500 focus:outline-none transition-colors"
+            />
+          </div>
+
+          {/* Status Filter - Lemon colored */}
+          <select
+            value={statusFilter}
+            onChange={(e) => {
+              setStatusFilter(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="w-40 px-3 py-2 bg-gradient-to-r from-yellow-400/20 to-yellow-500/20 border border-yellow-500/30 rounded-lg text-sm text-black focus:border-yellow-500 focus:outline-none transition-colors"
+          >
+            <option value="all" className="bg-gray-900 text-white">All Status</option>
+            {accountStatusOptions.map(opt => (
+              <option key={opt.value} value={opt.value} className="bg-gray-900 text-white">{opt.label}</option>
+            ))}
+          </select>
+
+          {/* Verification Filter - Lemon colored */}
+          <select
+            value={verificationFilter}
+            onChange={(e) => {
+              setVerificationFilter(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="w-40 px-3 py-2 bg-gradient-to-r from-yellow-400/20 to-yellow-500/20 border border-yellow-500/30 rounded-lg text-sm text-black focus:border-yellow-500 focus:outline-none transition-colors"
+          >
+            <option value="all" className="bg-gray-900 text-white">All Verification</option>
+            {verificationLevelOptions.map(opt => (
+              <option key={opt.value} value={opt.value} className="bg-gray-900 text-white">{opt.label}</option>
+            ))}
+          </select>
+
+          {/* Export Button */}
+          <button
+            onClick={exportToCSV}
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-burnt-orange-500 to-yellow-500 text-white rounded-lg text-sm font-medium hover:opacity-90 transition-opacity whitespace-nowrap"
+          >
+            <Download className="w-4 h-4" />
+            <span>Export CSV</span>
+          </button>
+        </div>
+
+        {/* Mobile Layout - Search on its own row, filters on second row */}
+        <div className="sm:hidden space-y-2">
+          {/* Search - Full width row */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-white/40" />
+            <input
+              type="text"
+              placeholder="Search users..."
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="w-full pl-9 pr-4 py-2.5 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-white/40 focus:border-burnt-orange-500 focus:outline-none transition-colors"
+            />
+          </div>
+
+          {/* Second row - Status, Verification, Export */}
+          <div className="flex items-center gap-2">
+            {/* Status Filter - Lemon colored */}
+            <select
+              value={statusFilter}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="flex-1 px-2 py-2 bg-gradient-to-r from-yellow-400/20 to-yellow-500/20 border border-yellow-500/30 rounded-lg text-xs text-black focus:border-yellow-500 focus:outline-none transition-colors"
+            >
+              <option value="all" className="bg-gray-900 text-white">Status</option>
+              {accountStatusOptions.map(opt => (
+                <option key={opt.value} value={opt.value} className="bg-gray-900 text-white">{opt.label}</option>
+              ))}
+            </select>
+
+            {/* Verification Filter - Lemon colored */}
+            <select
+              value={verificationFilter}
+              onChange={(e) => {
+                setVerificationFilter(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="flex-1 px-2 py-2 bg-gradient-to-r from-yellow-400/20 to-yellow-500/20 border border-yellow-500/30 rounded-lg text-xs text-black focus:border-yellow-500 focus:outline-none transition-colors"
+            >
+              <option value="all" className="bg-gray-900 text-white">Verification</option>
+              {verificationLevelOptions.map(opt => (
+                <option key={opt.value} value={opt.value} className="bg-gray-900 text-white">{opt.label}</option>
+              ))}
+            </select>
+
+            {/* Export Button */}
+            <button
+              onClick={exportToCSV}
+              className="px-3 py-2 bg-gradient-to-r from-burnt-orange-500 to-yellow-500 text-white rounded-lg text-xs font-medium hover:opacity-90 transition-opacity whitespace-nowrap flex items-center gap-1"
+              title="Export CSV"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>CSV</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Bulk Actions */}
+      {selectedProfiles.length > 0 && (
+        <div className="mb-4 p-3 bg-white/5 rounded-xl border border-burnt-orange-500/30 flex items-center justify-between">
+          <span className="text-sm text-white">
+            {selectedProfiles.length} profile(s) selected
+          </span>
+          <div className="flex items-center gap-2">
+            <select
+              value={bulkAction}
+              onChange={(e) => setBulkAction(e.target.value)}
+              className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-sm text-white focus:border-burnt-orange-500 focus:outline-none transition-colors"
+            >
+              <option value="">Bulk Actions</option>
+              <optgroup label="Account Status">
+                {accountStatusOptions.map(opt => (
+                  <option key={opt.value} value={`status_${opt.value}`}>
+                    Set Status: {opt.label}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="Verification Level">
+                {verificationLevelOptions.map(opt => (
+                  <option key={opt.value} value={`verification_${opt.value}`}>
+                    Set Verification: {opt.label}
+                  </option>
+                ))}
+              </optgroup>
+            </select>
+            <button
+              onClick={handleBulkAction}
+              disabled={!bulkAction || updating}
+              className="px-3 py-1.5 bg-gradient-to-r from-burnt-orange-500 to-yellow-500 text-white rounded-lg text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+            >
+              Apply
+            </button>
+            <button
+              onClick={() => setSelectedProfiles([])}
+              className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"
+            >
+              <X className="w-4 h-4 text-white/60" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Profiles Table */}
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader className="w-8 h-8 text-burnt-orange-500 animate-spin" />
+        </div>
+      ) : (
+        <>
+          {/* Desktop Table View */}
+          <div className="hidden sm:block bg-white/5 rounded-xl border border-white/10 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-white/10 bg-white/5">
+                    <th className="p-3 text-left">
+                      <input
+                        type="checkbox"
+                        checked={selectedProfiles.length === profiles.length && profiles.length > 0}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedProfiles(profiles.map(p => p.id));
+                          } else {
+                            setSelectedProfiles([]);
+                          }
+                        }}
+                        className="rounded border-white/20 bg-white/5 text-burnt-orange-500 focus:ring-burnt-orange-500"
+                      />
+                    </th>
+                    <th className="p-3 text-left text-xs font-medium text-white/40">User</th>
+                    <th className="p-3 text-left text-xs font-medium text-white/40">Contact</th>
+                    <th className="p-3 text-left text-xs font-medium text-white/40">Location</th>
+                    <th className="p-3 text-left text-xs font-medium text-white/40">Status</th>
+                    <th className="p-3 text-left text-xs font-medium text-white/40">Verification</th>
+                    <th className="p-3 text-left text-xs font-medium text-white/40">Role</th>
+                    <th className="p-3 text-left text-xs font-medium text-white/40">Votes</th>
+                    <th className="p-3 text-left text-xs font-medium text-white/40">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {profiles.map((profile) => (
+                    <motion.tr
+                      key={profile.id}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="border-b border-white/10 hover:bg-white/5 transition-colors"
+                    >
+                      {editingId === profile.id ? (
+                        // Edit Mode
+                        <>
+                          <td className="p-3">
+                            <input
+                              type="checkbox"
+                              checked={selectedProfiles.includes(profile.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedProfiles([...selectedProfiles, profile.id]);
+                                } else {
+                                  setSelectedProfiles(selectedProfiles.filter(id => id !== profile.id));
+                                }
+                              }}
+                              className="rounded border-white/20 bg-white/5 text-burnt-orange-500 focus:ring-burnt-orange-500"
+                            />
+                          </td>
+                          <td className="p-3">
+                            <div className="space-y-1">
+                              <input
+                                type="text"
+                                value={editForm.username}
+                                onChange={(e) => setEditForm({...editForm, username: e.target.value})}
+                                className="w-full px-2 py-1 bg-white/10 border border-white/20 rounded text-xs text-white"
+                                placeholder="Username"
+                              />
+                              <input
+                                type="text"
+                                value={editForm.full_name}
+                                onChange={(e) => setEditForm({...editForm, full_name: e.target.value})}
+                                className="w-full px-2 py-1 bg-white/10 border border-white/20 rounded text-xs text-white"
+                                placeholder="Full Name"
+                              />
+                              <textarea
+                                value={editForm.bio}
+                                onChange={(e) => setEditForm({...editForm, bio: e.target.value})}
+                                className="w-full px-2 py-1 bg-white/10 border border-white/20 rounded text-xs text-white"
+                                placeholder="Bio"
+                                rows="2"
+                              />
+                            </div>
+                          </td>
+                          <td className="p-3">
+                            <div className="space-y-1">
+                              <input
+                                type="email"
+                                value={editForm.email}
+                                onChange={(e) => setEditForm({...editForm, email: e.target.value})}
+                                className="w-full px-2 py-1 bg-white/10 border border-white/20 rounded text-xs text-white"
+                                placeholder="Email"
+                              />
+                              <input
+                                type="tel"
+                                value={editForm.phone}
+                                onChange={(e) => setEditForm({...editForm, phone: e.target.value})}
+                                className="w-full px-2 py-1 bg-white/10 border border-white/20 rounded text-xs text-white"
+                                placeholder="Phone"
+                              />
+                            </div>
+                          </td>
+                          <td className="p-3">
+                            <div className="space-y-1">
+                              <input
+                                type="text"
+                                value={editForm.country}
+                                onChange={(e) => setEditForm({...editForm, country: e.target.value})}
+                                className="w-full px-2 py-1 bg-white/10 border border-white/20 rounded text-xs text-white"
+                                placeholder="Country"
+                              />
+                              <input
+                                type="text"
+                                value={editForm.state}
+                                onChange={(e) => setEditForm({...editForm, state: e.target.value})}
+                                className="w-full px-2 py-1 bg-white/10 border border-white/20 rounded text-xs text-white"
+                                placeholder="State"
+                              />
+                              <input
+                                type="text"
+                                value={editForm.city}
+                                onChange={(e) => setEditForm({...editForm, city: e.target.value})}
+                                className="w-full px-2 py-1 bg-white/10 border border-white/20 rounded text-xs text-white"
+                                placeholder="City"
+                              />
+                            </div>
+                          </td>
+                          <td className="p-3">
+                            <select
+                              value={editForm.account_status}
+                              onChange={(e) => setEditForm({...editForm, account_status: e.target.value})}
+                              className="w-full px-2 py-1 bg-white/10 border border-white/20 rounded text-xs text-white"
+                            >
+                              {accountStatusOptions.map(opt => (
+                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="p-3">
+                            <select
+                              value={editForm.verification_level}
+                              onChange={(e) => setEditForm({...editForm, verification_level: e.target.value})}
+                              className="w-full px-2 py-1 bg-white/10 border border-white/20 rounded text-xs text-white"
+                            >
+                              {verificationLevelOptions.map(opt => (
+                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="p-3">
+                            <select
+                              value={editForm.role}
+                              onChange={(e) => setEditForm({...editForm, role: e.target.value})}
+                              className="w-full px-2 py-1 bg-white/10 border border-white/20 rounded text-xs text-white"
+                            >
+                              <option value="user">User</option>
+                              <option value="celebrity">Celebrity</option>
+                              <option value="admin">Admin</option>
+                            </select>
+                          </td>
+                          <td className="p-3">
+                            <div className="text-sm font-semibold text-burnt-orange-400">
+                              {voteStats[profile.id] || 0}
+                            </div>
+                          </td>
+                          <td className="p-3">
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => handleSaveEdit(profile.id)}
+                                disabled={updating}
+                                className="p-1.5 bg-green-500/20 hover:bg-green-500/30 rounded-lg transition-colors"
+                                title="Save"
+                              >
+                                <Save className="w-4 h-4 text-green-400" />
+                              </button>
+                              <button
+                                onClick={handleCancelEdit}
+                                className="p-1.5 bg-red-500/20 hover:bg-red-500/30 rounded-lg transition-colors"
+                                title="Cancel"
+                              >
+                                <X className="w-4 h-4 text-red-400" />
+                              </button>
+                            </div>
+                          </td>
+                        </>
+                      ) : (
+                        // View Mode
+                        <>
+                          <td className="p-3">
+                            <input
+                              type="checkbox"
+                              checked={selectedProfiles.includes(profile.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedProfiles([...selectedProfiles, profile.id]);
+                                } else {
+                                  setSelectedProfiles(selectedProfiles.filter(id => id !== profile.id));
+                                }
+                              }}
+                              className="rounded border-white/20 bg-white/5 text-burnt-orange-500 focus:ring-burnt-orange-500"
+                            />
+                          </td>
+                          <td className="p-3">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-burnt-orange-500 to-yellow-500 overflow-hidden flex-shrink-0">
+                                {profile.avatar_url ? (
+                                  <Image
+                                    src={profile.avatar_url}
+                                    alt={profile.username}
+                                    width={32}
+                                    height={32}
+                                    className="w-full h-full object-cover"
+                                  />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center">
+                                    <User className="w-4 h-4 text-white" />
+                                  </div>
+                                )}
+                              </div>
+                              <div>
+                                <div className="font-medium text-white text-sm">{profile.full_name}</div>
+                                <div className="text-xs text-white/40">@{profile.username}</div>
+                                {profile.bio && (
+                                  <div className="text-xs text-white/60 mt-1 line-clamp-2">{profile.bio}</div>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="p-3">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-1 text-xs">
+                                <Mail className="w-3 h-3 text-white/40" />
+                                <span className="text-white/80">{profile.email}</span>
+                              </div>
+                              {profile.phone && (
+                                <div className="flex items-center gap-1 text-xs">
+                                  <Phone className="w-3 h-3 text-white/40" />
+                                  <span className="text-white/80">{profile.phone}</span>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-3">
+                            <div className="space-y-1">
+                              {profile.country && (
+                                <div className="flex items-center gap-1 text-xs">
+                                  <MapPin className="w-3 h-3 text-white/40" />
+                                  <span className="text-white/80">{profile.country}</span>
+                                </div>
+                              )}
+                              {(profile.state || profile.city) && (
+                                <div className="text-xs text-white/60">
+                                  {[profile.city, profile.state].filter(Boolean).join(', ')}
+                                </div>
+                              )}
+                              {profile.date_of_birth && (
+                                <div className="flex items-center gap-1 text-xs">
+                                  <Calendar className="w-3 h-3 text-white/40" />
+                                  <span className="text-white/60">
+                                    {new Date(profile.date_of_birth).toLocaleDateString()}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-3">
+                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${getStatusBadgeColor(profile.account_status)}`}>
+                              {accountStatusOptions.find(opt => opt.value === profile.account_status)?.label || 'Unknown'}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${getVerificationBadgeColor(profile.verification_level)}`}>
+                              {verificationLevelOptions.find(opt => opt.value === profile.verification_level)?.label || 'Unknown'}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border bg-purple-500/20 text-purple-400 border-purple-500/30">
+                              {profile.role || 'user'}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <div className="text-sm font-semibold text-burnt-orange-400">
+                              {voteStats[profile.id] || 0}
+                            </div>
+                          </td>
+                          <td className="p-3">
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => handleEdit(profile)}
+                                className="p-1.5 bg-blue-500/20 hover:bg-blue-500/30 rounded-lg transition-colors"
+                                title="Edit"
+                              >
+                                <Edit className="w-4 h-4 text-blue-400" />
+                              </button>
+                              <button
+                                onClick={() => setShowDeleteConfirm(profile.id)}
+                                className="p-1.5 bg-red-500/20 hover:bg-red-500/30 rounded-lg transition-colors"
+                                title="Delete"
+                              >
+                                <Trash2 className="w-4 h-4 text-red-400" />
+                              </button>
+                            </div>
+                          </td>
+                        </>
+                      )}
+                    </motion.tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Mobile Card View */}
+          <div className="sm:hidden space-y-3">
+            {profiles.map((profile) => (
+              <motion.div
+                key={profile.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-white/5 rounded-xl border border-white/10 p-3"
+              >
+                {editingId === profile.id ? (
+                  // Mobile Edit Mode
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="text-sm font-medium text-white">Edit Profile</h3>
+                      <button
+                        onClick={handleCancelEdit}
+                        className="p-1 bg-red-500/20 rounded-lg"
+                      >
+                        <X className="w-3.5 h-3.5 text-red-400" />
+                      </button>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <input
+                        type="text"
+                        value={editForm.username}
+                        onChange={(e) => setEditForm({...editForm, username: e.target.value})}
+                        className="w-full px-2 py-1.5 bg-white/10 border border-white/20 rounded text-xs text-white"
+                        placeholder="Username"
+                      />
+                      <input
+                        type="text"
+                        value={editForm.full_name}
+                        onChange={(e) => setEditForm({...editForm, full_name: e.target.value})}
+                        className="w-full px-2 py-1.5 bg-white/10 border border-white/20 rounded text-xs text-white"
+                        placeholder="Full Name"
+                      />
+                      <input
+                        type="email"
+                        value={editForm.email}
+                        onChange={(e) => setEditForm({...editForm, email: e.target.value})}
+                        className="w-full px-2 py-1.5 bg-white/10 border border-white/20 rounded text-xs text-white"
+                        placeholder="Email"
+                      />
+                      <input
+                        type="tel"
+                        value={editForm.phone}
+                        onChange={(e) => setEditForm({...editForm, phone: e.target.value})}
+                        className="w-full px-2 py-1.5 bg-white/10 border border-white/20 rounded text-xs text-white"
+                        placeholder="Phone"
+                      />
+                      
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          type="text"
+                          value={editForm.country}
+                          onChange={(e) => setEditForm({...editForm, country: e.target.value})}
+                          className="px-2 py-1.5 bg-white/10 border border-white/20 rounded text-xs text-white"
+                          placeholder="Country"
+                        />
+                        <input
+                          type="text"
+                          value={editForm.state}
+                          onChange={(e) => setEditForm({...editForm, state: e.target.value})}
+                          className="px-2 py-1.5 bg-white/10 border border-white/20 rounded text-xs text-white"
+                          placeholder="State"
+                        />
+                      </div>
+                      
+                      <input
+                        type="text"
+                        value={editForm.city}
+                        onChange={(e) => setEditForm({...editForm, city: e.target.value})}
+                        className="w-full px-2 py-1.5 bg-white/10 border border-white/20 rounded text-xs text-white"
+                        placeholder="City"
+                      />
+                      
+                      <input
+                        type="date"
+                        value={editForm.date_of_birth}
+                        onChange={(e) => setEditForm({...editForm, date_of_birth: e.target.value})}
+                        className="w-full px-2 py-1.5 bg-white/10 border border-white/20 rounded text-xs text-white"
+                      />
+                      
+                      <textarea
+                        value={editForm.bio}
+                        onChange={(e) => setEditForm({...editForm, bio: e.target.value})}
+                        className="w-full px-2 py-1.5 bg-white/10 border border-white/20 rounded text-xs text-white"
+                        placeholder="Bio"
+                        rows="2"
+                      />
+                      
+                      <div className="grid grid-cols-3 gap-2">
+                        <select
+                          value={editForm.account_status}
+                          onChange={(e) => setEditForm({...editForm, account_status: e.target.value})}
+                          className="px-2 py-1.5 bg-white/10 border border-white/20 rounded text-xs text-white"
+                        >
+                          {accountStatusOptions.map(opt => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          ))}
+                        </select>
+                        
+                        <select
+                          value={editForm.verification_level}
+                          onChange={(e) => setEditForm({...editForm, verification_level: e.target.value})}
+                          className="px-2 py-1.5 bg-white/10 border border-white/20 rounded text-xs text-white"
+                        >
+                          {verificationLevelOptions.map(opt => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          ))}
+                        </select>
+                        
+                        <select
+                          value={editForm.role}
+                          onChange={(e) => setEditForm({...editForm, role: e.target.value})}
+                          className="px-2 py-1.5 bg-white/10 border border-white/20 rounded text-xs text-white"
+                        >
+                          <option value="user">User</option>
+                          <option value="celebrity">Celebrity</option>
+                          <option value="admin">Admin</option>
+                        </select>
+                      </div>
+                      
+                      <button
+                        onClick={() => handleSaveEdit(profile.id)}
+                        disabled={updating}
+                        className="w-full py-2 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-lg text-xs font-medium flex items-center justify-center gap-1"
+                      >
+                        {updating ? (
+                          <>
+                            <Loader className="w-3 h-3 animate-spin" />
+                            Saving...
+                          </>
+                        ) : (
+                          <>
+                            <Save className="w-3 h-3" />
+                            Save Changes
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  // Mobile View Mode
+                  <>
+                    <div className="flex items-start gap-3 mb-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedProfiles.includes(profile.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedProfiles([...selectedProfiles, profile.id]);
+                          } else {
+                            setSelectedProfiles(selectedProfiles.filter(id => id !== profile.id));
+                          }
+                        }}
+                        className="mt-1 rounded border-white/20 bg-white/5 text-burnt-orange-500 focus:ring-burnt-orange-500"
+                      />
+                      
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-burnt-orange-500 to-yellow-500 overflow-hidden flex-shrink-0">
+                        {profile.avatar_url ? (
+                          <Image
+                            src={profile.avatar_url}
+                            alt={profile.username}
+                            width={40}
+                            height={40}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <User className="w-5 h-5 text-white" />
+                          </div>
+                        )}
+                      </div>
+                      
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-white text-sm truncate">{profile.full_name}</div>
+                        <div className="text-xs text-white/40 truncate">@{profile.username}</div>
+                      </div>
+                      
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => handleEdit(profile)}
+                          className="p-2 bg-blue-500/20 rounded-lg"
+                        >
+                          <Edit className="w-3.5 h-3.5 text-blue-400" />
+                        </button>
+                        <button
+                          onClick={() => setShowDeleteConfirm(profile.id)}
+                          className="p-2 bg-red-500/20 rounded-lg"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 mt-2 text-xs">
+                      <div className="flex items-center gap-1">
+                        <Mail className="w-3 h-3 text-white/40" />
+                        <span className="text-white/80 truncate">{profile.email}</span>
+                      </div>
+                      {profile.phone && (
+                        <div className="flex items-center gap-1">
+                          <Phone className="w-3 h-3 text-white/40" />
+                          <span className="text-white/80 truncate">{profile.phone}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border ${getStatusBadgeColor(profile.account_status)}`}>
+                        {accountStatusOptions.find(opt => opt.value === profile.account_status)?.label || 'Unknown'}
+                      </span>
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border ${getVerificationBadgeColor(profile.verification_level)}`}>
+                        {verificationLevelOptions.find(opt => opt.value === profile.verification_level)?.label || 'Unknown'}
+                      </span>
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border bg-purple-500/20 text-purple-400 border-purple-500/30">
+                        {profile.role || 'user'}
+                      </span>
+                    </div>
+
+                    <div className="mt-2 pt-2 border-t border-white/10 flex justify-between items-center">
+                      <span className="text-xs text-white/40">Votes</span>
+                      <span className="text-sm font-semibold text-burnt-orange-400">
+                        {voteStats[profile.id] || 0}
+                      </span>
+                    </div>
+                  </>
+                )}
+              </motion.div>
+            ))}
+          </div>
+
+          {/* Delete Confirmation Modal */}
+          <AnimatePresence>
+            {showDeleteConfirm && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50"
+                onClick={() => setShowDeleteConfirm(null)}
+              >
+                <motion.div
+                  initial={{ scale: 0.95 }}
+                  animate={{ scale: 1 }}
+                  exit={{ scale: 0.95 }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="bg-gradient-to-b from-gray-900 to-black rounded-xl border border-white/10 p-6 max-w-md w-full"
+                >
+                  <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <AlertCircle className="w-8 h-8 text-red-400" />
+                  </div>
+                  <h3 className="text-lg font-bold text-white text-center mb-2">Delete Profile</h3>
+                  <p className="text-sm text-white/60 text-center mb-6">
+                    Are you sure you want to delete this profile? This action cannot be undone.
+                  </p>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setShowDeleteConfirm(null)}
+                      className="flex-1 py-2 bg-white/5 hover:bg-white/10 text-white rounded-lg text-sm font-medium transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => handleDelete(showDeleteConfirm)}
+                      disabled={updating}
+                      className="flex-1 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-lg text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      {updating ? (
+                        <>
+                          <Loader className="w-4 h-4 animate-spin" />
+                          Deleting...
+                        </>
+                      ) : (
+                        'Delete'
+                      )}
+                    </button>
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="mt-4 flex items-center justify-between">
+              <p className="text-xs text-white/40">
+                Showing {((currentPage - 1) * ITEMS_PER_PAGE) + 1} to {Math.min(currentPage * ITEMS_PER_PAGE, totalCount)} of {totalCount} profiles
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                  className="p-2 bg-white/5 hover:bg-white/10 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  <ChevronLeft className="w-4 h-4 text-white" />
+                </button>
+                <span className="text-sm text-white">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <button
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages}
+                  className="p-2 bg-white/5 hover:bg-white/10 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  <ChevronRight className="w-4 h-4 text-white" />
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
