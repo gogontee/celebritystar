@@ -38,6 +38,14 @@ export default function VoteModal({
   const [paystackLoaded, setPaystackLoaded] = useState(false);
   const [paypalReady, setPaypalReady] = useState(false);
   const [paypalLoading, setPaypalLoading] = useState(false);
+  
+  // Payment error state for custom popup
+  const [paymentError, setPaymentError] = useState({
+    show: false,
+    type: '', // 'declined', 'card_type', 'account', 'processing', 'network'
+    message: '',
+    suggestion: ''
+  });
 
   // Refs
   const currencySelectionRef = useRef(null);
@@ -185,25 +193,90 @@ export default function VoteModal({
                 { paypal_response: order }
               );
             } catch (err) {
-              setError('Payment failed. Please try again.');
-              setProcessing(false);
+              // Handle payment capture error with custom popup
+              handlePayPalError(err);
             }
           },
           onError: (err) => {
-            setError('PayPal payment failed. Please try again.');
-            setProcessing(false);
+            // Handle PayPal error with custom popup
+            handlePayPalError(err);
           },
           onCancel: () => {
-            setError('Payment cancelled');
+            setPaymentError({
+              show: true,
+              type: 'cancelled',
+              message: 'Payment was cancelled.',
+              suggestion: 'You can try again or choose a different payment method.'
+            });
             setProcessing(false);
           }
         }).render(paypalButtonContainerRef.current);
         
       } catch (error) {
-        setError('Failed to render PayPal button.');
+        setPaymentError({
+          show: true,
+          type: 'processing',
+          message: 'Failed to initialize payment.',
+          suggestion: 'Please refresh and try again.'
+        });
       }
     }
   }, [paypalReady, selectedCurrency, voteCount, profile, currentUser, guestInfo]);
+
+  // Handle PayPal errors with detailed messages
+  const handlePayPalError = (err) => {
+    console.error('Full PayPal error:', err);
+    setProcessing(false);
+    
+    // Parse error message to determine type
+    const errorString = JSON.stringify(err).toLowerCase();
+    
+    let errorType = 'processing';
+    let userMessage = 'Payment failed. Please try again.';
+    let suggestion = 'Try a different payment method or card.';
+    
+    // Card declined errors
+    if (errorString.includes('declined') || 
+        errorString.includes('payment_denied') ||
+        errorString.includes('instrument_declined')) {
+      errorType = 'declined';
+      userMessage = 'Your card was declined.';
+      suggestion = 'Please try a different card or use your PayPal balance.';
+    }
+    // Card type not supported
+    else if (errorString.includes('card_type') || 
+             errorString.includes('unsupported')) {
+      errorType = 'card_type';
+      userMessage = 'This card type is not supported.';
+      suggestion = 'Please use Visa, Mastercard, or American Express.';
+    }
+    // Account/restriction errors
+    else if (errorString.includes('account') || 
+             errorString.includes('restricted') ||
+             errorString.includes('verify')) {
+      errorType = 'account';
+      userMessage = 'There is an issue with the merchant account.';
+      suggestion = 'Please try again later or contact support.';
+    }
+    // Network errors
+    else if (errorString.includes('network') || 
+             errorString.includes('connection')) {
+      errorType = 'network';
+      userMessage = 'Network error occurred.';
+      suggestion = 'Please check your internet connection and try again.';
+    }
+    
+    // Set the error state to show popup
+    setPaymentError({
+      show: true,
+      type: errorType,
+      message: userMessage,
+      suggestion: suggestion
+    });
+    
+    // Also keep the original error for debugging
+    setError(userMessage);
+  };
 
   // Auto-scroll effect
   useEffect(() => {
@@ -398,6 +471,7 @@ export default function VoteModal({
     setError('');
     setPaymentStep('selection');
     setProcessing(false);
+    setPaymentError({ show: false, type: '', message: '', suggestion: '' });
   };
 
   const handleClose = () => {
@@ -730,6 +804,111 @@ export default function VoteModal({
               )}
             </div>
           </motion.div>
+
+          {/* Payment Error Popup - This appears above everything */}
+          <AnimatePresence>
+            {paymentError.show && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+                onClick={() => setPaymentError({...paymentError, show: false})}
+              >
+                <motion.div
+                  initial={{ scale: 0.95, y: 20 }}
+                  animate={{ scale: 1, y: 0 }}
+                  exit={{ scale: 0.95, y: 20 }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="bg-gradient-to-b from-gray-900 to-black rounded-xl border border-white/10 p-6 max-w-md w-full"
+                >
+                  <div className="flex items-center justify-center mb-4">
+                    {paymentError.type === 'declined' && (
+                      <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center">
+                        <svg className="w-8 h-8 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                      </div>
+                    )}
+                    {paymentError.type === 'card_type' && (
+                      <div className="w-16 h-16 bg-yellow-500/20 rounded-full flex items-center justify-center">
+                        <svg className="w-8 h-8 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </div>
+                    )}
+                    {paymentError.type === 'account' && (
+                      <div className="w-16 h-16 bg-purple-500/20 rounded-full flex items-center justify-center">
+                        <svg className="w-8 h-8 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                        </svg>
+                      </div>
+                    )}
+                    {paymentError.type === 'network' && (
+                      <div className="w-16 h-16 bg-blue-500/20 rounded-full flex items-center justify-center">
+                        <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                        </svg>
+                      </div>
+                    )}
+                    {paymentError.type === 'cancelled' && (
+                      <div className="w-16 h-16 bg-gray-500/20 rounded-full flex items-center justify-center">
+                        <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <h3 className="text-lg font-bold text-white text-center mb-2">
+                    Payment Failed
+                  </h3>
+                  
+                  <p className="text-white/80 text-center mb-4">
+                    {paymentError.message}
+                  </p>
+                  
+                  <div className="bg-white/5 border border-white/10 rounded-lg p-3 mb-6">
+                    <p className="text-sm text-white/60 text-center">
+                      💡 {paymentError.suggestion}
+                    </p>
+                  </div>
+                  
+                  <div className="flex flex-col gap-2">
+                    <button
+                      onClick={() => setPaymentError({...paymentError, show: false})}
+                      className="w-full py-3 bg-gradient-to-r from-orange-500 to-yellow-500 text-white rounded-lg font-semibold hover:opacity-90 transition-opacity"
+                    >
+                      Try Again
+                    </button>
+                    
+                    {paymentError.type !== 'account' && (
+                      <button
+                        onClick={() => {
+                          setPaymentError({...paymentError, show: false});
+                          // Switch back to selection
+                          handleBackToVoteSelection();
+                        }}
+                        className="w-full py-2 bg-white/5 text-white rounded-lg text-sm hover:bg-white/10 transition-colors"
+                      >
+                        Choose Different Payment Method
+                      </button>
+                    )}
+                    
+                    <button
+                      onClick={() => {
+                        setPaymentError({...paymentError, show: false});
+                        handleClose();
+                      }}
+                      className="w-full py-2 text-sm text-white/40 hover:text-white/60 transition-colors"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </motion.div>
       )}
     </AnimatePresence>
