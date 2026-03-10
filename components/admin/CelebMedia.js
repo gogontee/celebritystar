@@ -16,11 +16,13 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
-  ExternalLink
+  ExternalLink,
+  Newspaper  // Added Newspaper icon for News button
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Image from 'next/image';
 import { createBrowserClient } from '@supabase/ssr';
+import NewsManagement from './NewsManagement'; // IMPORT the NewsManagement component
 
 export default function CelebMedia() {
   const [celebData, setCelebData] = useState(null);
@@ -288,7 +290,8 @@ export default function CelebMedia() {
     { id: 'carousel', label: 'Carousel', icon: ImageIcon, count: carousel.length },
     { id: 'tv', label: 'TV', icon: Video, count: tvVideos.length },
     { id: 'gallery', label: 'Gallery', icon: ImageIcon, count: celebGallery.length },
-    { id: 'videos', label: 'YouTube', icon: Youtube, count: videos.length }
+    { id: 'videos', label: 'YouTube', icon: Youtube, count: videos.length },
+    { id: 'news', label: 'News', icon: Newspaper, count: 0 } // Added News button
   ];
 
   if (loading) {
@@ -320,378 +323,389 @@ export default function CelebMedia() {
             onClick={() => setActiveSection(section.id)}
             className={`flex items-center gap-1 px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg text-[10px] sm:text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0 ${
               activeSection === section.id
-                ? 'bg-gradient-to-r from-burnt-orange-500 to-yellow-500 text-white'
+                ? section.id === 'news'
+                  ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' // Special styling for news
+                  : 'bg-gradient-to-r from-burnt-orange-500 to-yellow-500 text-white'
                 : 'bg-white/5 text-white/60 hover:bg-white/10'
             }`}
           >
             <section.icon className="w-3 h-3 sm:w-4 sm:h-4" />
             <span className="hidden xs:inline sm:inline">{section.label}</span>
-            <span className="text-[8px] sm:text-xs bg-white/20 px-1 py-0.5 rounded-full ml-0.5">
-              {section.count}
-            </span>
+            {section.id !== 'news' && ( // Don't show count for news
+              <span className="text-[8px] sm:text-xs bg-white/20 px-1 py-0.5 rounded-full ml-0.5">
+                {section.count}
+              </span>
+            )}
           </button>
         ))}
       </div>
 
-      {/* Add Button - Compact on mobile */}
-      <div className="flex justify-end">
-        <button
-          onClick={() => {
-            setAddType(activeSection);
-            setShowAddModal(true);
-            setAddForm({});
-          }}
-          className="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-lg text-xs sm:text-sm font-medium hover:opacity-90 transition-opacity"
-        >
-          <Plus className="w-3 h-3 sm:w-4 sm:h-4" />
-          <span className="hidden xs:inline">Add</span>
-          <span className="xs:hidden">+</span>
-        </button>
-      </div>
+      {/* Conditional rendering - Show NewsManagement when news section is active */}
+      {activeSection === 'news' ? (
+        <NewsManagement />
+      ) : (
+        <>
+          {/* Add Button - Only show for non-news sections */}
+          <div className="flex justify-end">
+            <button
+              onClick={() => {
+                setAddType(activeSection);
+                setShowAddModal(true);
+                setAddForm({});
+              }}
+              className="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-lg text-xs sm:text-sm font-medium hover:opacity-90 transition-opacity"
+            >
+              <Plus className="w-3 h-3 sm:w-4 sm:h-4" />
+              <span className="hidden xs:inline">Add</span>
+              <span className="xs:hidden">+</span>
+            </button>
+          </div>
 
-      {/* Content Display - with responsive grid */}
-      <div className="bg-white/5 rounded-xl border border-white/10 p-3 sm:p-4">
-        {activeSection === 'carousel' && (
-          <div className="space-y-3 sm:space-y-4">
-            <h3 className="text-xs sm:text-sm font-medium text-white/80">Carousel Images</h3>
-            {carousel.length === 0 ? (
-              <p className="text-center text-white/40 py-6 sm:py-8 text-xs sm:text-sm">No carousel images</p>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 sm:gap-4">
-                {carousel.map((item, index) => (
-                  <motion.div
-                    key={index}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="relative group bg-white/5 rounded-lg overflow-hidden border border-white/10 aspect-video"
-                  >
-                    {editingId === `carousel-${index}` ? (
-                      <div className="p-2 space-y-2">
-                        <input
-                          type="text"
-                          value={editForm.url || item.url}
-                          onChange={(e) => setEditForm({ url: e.target.value })}
-                          className="w-full px-2 py-1 bg-white/10 border border-white/20 rounded text-[10px] text-white"
-                          placeholder="Image URL"
-                        />
-                        <div className="flex gap-1">
-                          <button
-                            onClick={() => handleUpdateCarouselImage(index, editForm.url)}
-                            className="flex-1 py-1 bg-green-500/20 text-green-400 rounded text-[10px] font-medium"
-                          >
-                            Save
-                          </button>
-                          <button
-                            onClick={() => setEditingId(null)}
-                            className="flex-1 py-1 bg-red-500/20 text-red-400 rounded text-[10px] font-medium"
-                          >
-                            X
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        <Image
-                          src={item.url}
-                          alt={`Carousel ${index + 1}`}
-                          fill
-                          className="object-cover"
-                        />
-                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
-                          <button
-                            onClick={() => {
-                              setEditingId(`carousel-${index}`);
-                              setEditForm({ url: item.url });
-                            }}
-                            className="p-1 bg-blue-500/20 rounded-lg hover:bg-blue-500/30"
-                          >
-                            <Edit className="w-3 h-3 text-blue-400" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteCarouselImage(index)}
-                            className="p-1 bg-red-500/20 rounded-lg hover:bg-red-500/30"
-                          >
-                            <Trash2 className="w-3 h-3 text-red-400" />
-                          </button>
-                          <a
-                            href={item.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="p-1 bg-white/20 rounded-lg hover:bg-white/30"
-                          >
-                            <ExternalLink className="w-3 h-3 text-white" />
-                          </a>
-                        </div>
-                      </>
-                    )}
-                  </motion.div>
-                ))}
+          {/* Content Display - with responsive grid */}
+          <div className="bg-white/5 rounded-xl border border-white/10 p-3 sm:p-4">
+            {activeSection === 'carousel' && (
+              <div className="space-y-3 sm:space-y-4">
+                <h3 className="text-xs sm:text-sm font-medium text-white/80">Carousel Images</h3>
+                {carousel.length === 0 ? (
+                  <p className="text-center text-white/40 py-6 sm:py-8 text-xs sm:text-sm">No carousel images</p>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 sm:gap-4">
+                    {carousel.map((item, index) => (
+                      <motion.div
+                        key={index}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="relative group bg-white/5 rounded-lg overflow-hidden border border-white/10 aspect-video"
+                      >
+                        {editingId === `carousel-${index}` ? (
+                          <div className="p-2 space-y-2">
+                            <input
+                              type="text"
+                              value={editForm.url || item.url}
+                              onChange={(e) => setEditForm({ url: e.target.value })}
+                              className="w-full px-2 py-1 bg-white/10 border border-white/20 rounded text-[10px] text-white"
+                              placeholder="Image URL"
+                            />
+                            <div className="flex gap-1">
+                              <button
+                                onClick={() => handleUpdateCarouselImage(index, editForm.url)}
+                                className="flex-1 py-1 bg-green-500/20 text-green-400 rounded text-[10px] font-medium"
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={() => setEditingId(null)}
+                                className="flex-1 py-1 bg-red-500/20 text-red-400 rounded text-[10px] font-medium"
+                              >
+                                X
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <Image
+                              src={item.url}
+                              alt={`Carousel ${index + 1}`}
+                              fill
+                              className="object-cover"
+                            />
+                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
+                              <button
+                                onClick={() => {
+                                  setEditingId(`carousel-${index}`);
+                                  setEditForm({ url: item.url });
+                                }}
+                                className="p-1 bg-blue-500/20 rounded-lg hover:bg-blue-500/30"
+                              >
+                                <Edit className="w-3 h-3 text-blue-400" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteCarouselImage(index)}
+                                className="p-1 bg-red-500/20 rounded-lg hover:bg-red-500/30"
+                              >
+                                <Trash2 className="w-3 h-3 text-red-400" />
+                              </button>
+                              <a
+                                href={item.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="p-1 bg-white/20 rounded-lg hover:bg-white/30"
+                              >
+                                <ExternalLink className="w-3 h-3 text-white" />
+                              </a>
+                            </div>
+                          </>
+                        )}
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeSection === 'tv' && (
+              <div className="space-y-3 sm:space-y-4">
+                <h3 className="text-xs sm:text-sm font-medium text-white/80">TV Videos</h3>
+                {tvVideos.length === 0 ? (
+                  <p className="text-center text-white/40 py-6 sm:py-8 text-xs sm:text-sm">No TV videos</p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                    {tvVideos.map((item, index) => (
+                      <motion.div
+                        key={index}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="relative group bg-white/5 rounded-lg overflow-hidden border border-white/10"
+                      >
+                        {editingId === `tv-${index}` ? (
+                          <div className="p-2 space-y-2">
+                            <input
+                              type="text"
+                              value={editForm.url || item.url}
+                              onChange={(e) => setEditForm({ url: e.target.value })}
+                              className="w-full px-2 py-1 bg-white/10 border border-white/20 rounded text-xs text-white"
+                              placeholder="Video URL"
+                            />
+                            <div className="flex gap-1">
+                              <button
+                                onClick={() => handleUpdateTvVideo(index, editForm.url)}
+                                className="flex-1 py-1 bg-green-500/20 text-green-400 rounded text-xs font-medium"
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={() => setEditingId(null)}
+                                className="flex-1 py-1 bg-red-500/20 text-red-400 rounded text-xs font-medium"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <video
+                              src={item.url}
+                              className="w-full aspect-video object-cover"
+                              controls
+                            />
+                            <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={() => {
+                                  setEditingId(`tv-${index}`);
+                                  setEditForm({ url: item.url });
+                                }}
+                                className="p-1 bg-blue-500/20 rounded-lg hover:bg-blue-500/30"
+                              >
+                                <Edit className="w-3 h-3 text-blue-400" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteTvVideo(index)}
+                                className="p-1 bg-red-500/20 rounded-lg hover:bg-red-500/30"
+                              >
+                                <Trash2 className="w-3 h-3 text-red-400" />
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeSection === 'gallery' && (
+              <div className="space-y-3 sm:space-y-4">
+                <h3 className="text-xs sm:text-sm font-medium text-white/80">Celeb Gallery</h3>
+                {celebGallery.length === 0 ? (
+                  <p className="text-center text-white/40 py-6 sm:py-8 text-xs sm:text-sm">No gallery items</p>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-4">
+                    {celebGallery.map((item) => (
+                      <motion.div
+                        key={item.id}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="relative group bg-white/5 rounded-lg overflow-hidden border border-white/10"
+                      >
+                        {editingId === item.id ? (
+                          <div className="p-2 space-y-2">
+                            <input
+                              type="text"
+                              value={editForm.caption || item.caption}
+                              onChange={(e) => setEditForm({ caption: e.target.value })}
+                              className="w-full px-2 py-1 bg-white/10 border border-white/20 rounded text-[10px] text-white"
+                              placeholder="Caption"
+                            />
+                            <input
+                              type="text"
+                              value={editForm.url || item.media[0]?.url || ''}
+                              onChange={(e) => setEditForm({ ...editForm, url: e.target.value })}
+                              className="w-full px-2 py-1 bg-white/10 border border-white/20 rounded text-[10px] text-white"
+                              placeholder="Image URL"
+                            />
+                            <div className="flex gap-1">
+                              <button
+                                onClick={() => {
+                                  const updates = {};
+                                  if (editForm.caption !== undefined) updates.caption = editForm.caption;
+                                  if (editForm.url) {
+                                    updates.media = [{ url: editForm.url }];
+                                  }
+                                  handleUpdateGalleryImage(item.id, updates);
+                                }}
+                                className="flex-1 py-1 bg-green-500/20 text-green-400 rounded text-[10px] font-medium"
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={() => setEditingId(null)}
+                                className="flex-1 py-1 bg-red-500/20 text-red-400 rounded text-[10px] font-medium"
+                              >
+                                X
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="aspect-square relative">
+                              <Image
+                                src={item.media[0]?.url || ''}
+                                alt={item.caption || 'Gallery image'}
+                                fill
+                                className="object-cover"
+                              />
+                            </div>
+                            <div className="p-1">
+                              <p className="text-[10px] text-white/80 truncate">{item.caption || 'No caption'}</p>
+                              <p className="text-[8px] text-white/40">
+                                {new Date(item.created_at).toLocaleDateString()}
+                              </p>
+                            </div>
+                            <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={() => {
+                                  setEditingId(item.id);
+                                  setEditForm({ caption: item.caption, url: item.media[0]?.url });
+                                }}
+                                className="p-1 bg-blue-500/20 rounded-lg hover:bg-blue-500/30"
+                              >
+                                <Edit className="w-3 h-3 text-blue-400" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteGalleryImage(item.id)}
+                                className="p-1 bg-red-500/20 rounded-lg hover:bg-red-500/30"
+                              >
+                                <Trash2 className="w-3 h-3 text-red-400" />
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeSection === 'videos' && (
+              <div className="space-y-3 sm:space-y-4">
+                <h3 className="text-xs sm:text-sm font-medium text-white/80">YouTube Videos</h3>
+                {videos.length === 0 ? (
+                  <p className="text-center text-white/40 py-6 sm:py-8 text-xs sm:text-sm">No YouTube videos</p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                    {videos.map((item) => (
+                      <motion.div
+                        key={item.id}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="relative group bg-white/5 rounded-lg overflow-hidden border border-white/10"
+                      >
+                        {editingId === item.id ? (
+                          <div className="p-2 space-y-2">
+                            <input
+                              type="text"
+                              value={editForm.caption || item.caption}
+                              onChange={(e) => setEditForm({ caption: e.target.value })}
+                              className="w-full px-2 py-1 bg-white/10 border border-white/20 rounded text-xs text-white"
+                              placeholder="Caption"
+                            />
+                            <input
+                              type="text"
+                              value={editForm.url || item.media[0]?.url || ''}
+                              onChange={(e) => setEditForm({ ...editForm, url: e.target.value })}
+                              className="w-full px-2 py-1 bg-white/10 border border-white/20 rounded text-xs text-white"
+                              placeholder="YouTube URL"
+                            />
+                            <div className="flex gap-1">
+                              <button
+                                onClick={() => {
+                                  if (editForm.url && editForm.url !== item.media[0]?.url) {
+                                    handleUpdateVideo(item.id, { url: editForm.url, caption: editForm.caption });
+                                  } else {
+                                    handleUpdateVideo(item.id, { caption: editForm.caption });
+                                  }
+                                }}
+                                className="flex-1 py-1 bg-green-500/20 text-green-400 rounded text-xs font-medium"
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={() => setEditingId(null)}
+                                className="flex-1 py-1 bg-red-500/20 text-red-400 rounded text-xs font-medium"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="aspect-video">
+                              <iframe
+                                src={item.media[0]?.embedUrl}
+                                title={item.caption || 'YouTube video'}
+                                className="w-full h-full"
+                                allowFullScreen
+                              />
+                            </div>
+                            <div className="p-2">
+                              <p className="text-xs text-white/80 truncate">{item.caption || 'No caption'}</p>
+                              <p className="text-[10px] text-white/40">
+                                {new Date(item.created_at).toLocaleDateString()}
+                              </p>
+                            </div>
+                            <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={() => {
+                                  setEditingId(item.id);
+                                  setEditForm({ 
+                                    caption: item.caption, 
+                                    url: item.media[0]?.url 
+                                  });
+                                }}
+                                className="p-1.5 bg-blue-500/20 rounded-lg hover:bg-blue-500/30"
+                              >
+                                <Edit className="w-3.5 h-3.5 text-blue-400" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteVideo(item.id)}
+                                className="p-1.5 bg-red-500/20 rounded-lg hover:bg-red-500/30"
+                              >
+                                <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
-        )}
-
-        {activeSection === 'tv' && (
-          <div className="space-y-3 sm:space-y-4">
-            <h3 className="text-xs sm:text-sm font-medium text-white/80">TV Videos</h3>
-            {tvVideos.length === 0 ? (
-              <p className="text-center text-white/40 py-6 sm:py-8 text-xs sm:text-sm">No TV videos</p>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                {tvVideos.map((item, index) => (
-                  <motion.div
-                    key={index}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="relative group bg-white/5 rounded-lg overflow-hidden border border-white/10"
-                  >
-                    {editingId === `tv-${index}` ? (
-                      <div className="p-2 space-y-2">
-                        <input
-                          type="text"
-                          value={editForm.url || item.url}
-                          onChange={(e) => setEditForm({ url: e.target.value })}
-                          className="w-full px-2 py-1 bg-white/10 border border-white/20 rounded text-xs text-white"
-                          placeholder="Video URL"
-                        />
-                        <div className="flex gap-1">
-                          <button
-                            onClick={() => handleUpdateTvVideo(index, editForm.url)}
-                            className="flex-1 py-1 bg-green-500/20 text-green-400 rounded text-xs font-medium"
-                          >
-                            Save
-                          </button>
-                          <button
-                            onClick={() => setEditingId(null)}
-                            className="flex-1 py-1 bg-red-500/20 text-red-400 rounded text-xs font-medium"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        <video
-                          src={item.url}
-                          className="w-full aspect-video object-cover"
-                          controls
-                        />
-                        <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={() => {
-                              setEditingId(`tv-${index}`);
-                              setEditForm({ url: item.url });
-                            }}
-                            className="p-1 bg-blue-500/20 rounded-lg hover:bg-blue-500/30"
-                          >
-                            <Edit className="w-3 h-3 text-blue-400" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteTvVideo(index)}
-                            className="p-1 bg-red-500/20 rounded-lg hover:bg-red-500/30"
-                          >
-                            <Trash2 className="w-3 h-3 text-red-400" />
-                          </button>
-                        </div>
-                      </>
-                    )}
-                  </motion.div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeSection === 'gallery' && (
-          <div className="space-y-3 sm:space-y-4">
-            <h3 className="text-xs sm:text-sm font-medium text-white/80">Celeb Gallery</h3>
-            {celebGallery.length === 0 ? (
-              <p className="text-center text-white/40 py-6 sm:py-8 text-xs sm:text-sm">No gallery items</p>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-4">
-                {celebGallery.map((item) => (
-                  <motion.div
-                    key={item.id}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="relative group bg-white/5 rounded-lg overflow-hidden border border-white/10"
-                  >
-                    {editingId === item.id ? (
-                      <div className="p-2 space-y-2">
-                        <input
-                          type="text"
-                          value={editForm.caption || item.caption}
-                          onChange={(e) => setEditForm({ caption: e.target.value })}
-                          className="w-full px-2 py-1 bg-white/10 border border-white/20 rounded text-[10px] text-white"
-                          placeholder="Caption"
-                        />
-                        <input
-                          type="text"
-                          value={editForm.url || item.media[0]?.url || ''}
-                          onChange={(e) => setEditForm({ ...editForm, url: e.target.value })}
-                          className="w-full px-2 py-1 bg-white/10 border border-white/20 rounded text-[10px] text-white"
-                          placeholder="Image URL"
-                        />
-                        <div className="flex gap-1">
-                          <button
-                            onClick={() => {
-                              const updates = {};
-                              if (editForm.caption !== undefined) updates.caption = editForm.caption;
-                              if (editForm.url) {
-                                updates.media = [{ url: editForm.url }];
-                              }
-                              handleUpdateGalleryImage(item.id, updates);
-                            }}
-                            className="flex-1 py-1 bg-green-500/20 text-green-400 rounded text-[10px] font-medium"
-                          >
-                            Save
-                          </button>
-                          <button
-                            onClick={() => setEditingId(null)}
-                            className="flex-1 py-1 bg-red-500/20 text-red-400 rounded text-[10px] font-medium"
-                          >
-                            X
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="aspect-square relative">
-                          <Image
-                            src={item.media[0]?.url || ''}
-                            alt={item.caption || 'Gallery image'}
-                            fill
-                            className="object-cover"
-                          />
-                        </div>
-                        <div className="p-1">
-                          <p className="text-[10px] text-white/80 truncate">{item.caption || 'No caption'}</p>
-                          <p className="text-[8px] text-white/40">
-                            {new Date(item.created_at).toLocaleDateString()}
-                          </p>
-                        </div>
-                        <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={() => {
-                              setEditingId(item.id);
-                              setEditForm({ caption: item.caption, url: item.media[0]?.url });
-                            }}
-                            className="p-1 bg-blue-500/20 rounded-lg hover:bg-blue-500/30"
-                          >
-                            <Edit className="w-3 h-3 text-blue-400" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteGalleryImage(item.id)}
-                            className="p-1 bg-red-500/20 rounded-lg hover:bg-red-500/30"
-                          >
-                            <Trash2 className="w-3 h-3 text-red-400" />
-                          </button>
-                        </div>
-                      </>
-                    )}
-                  </motion.div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeSection === 'videos' && (
-          <div className="space-y-3 sm:space-y-4">
-            <h3 className="text-xs sm:text-sm font-medium text-white/80">YouTube Videos</h3>
-            {videos.length === 0 ? (
-              <p className="text-center text-white/40 py-6 sm:py-8 text-xs sm:text-sm">No YouTube videos</p>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                {videos.map((item) => (
-                  <motion.div
-                    key={item.id}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="relative group bg-white/5 rounded-lg overflow-hidden border border-white/10"
-                  >
-                    {editingId === item.id ? (
-                      <div className="p-2 space-y-2">
-                        <input
-                          type="text"
-                          value={editForm.caption || item.caption}
-                          onChange={(e) => setEditForm({ caption: e.target.value })}
-                          className="w-full px-2 py-1 bg-white/10 border border-white/20 rounded text-xs text-white"
-                          placeholder="Caption"
-                        />
-                        <input
-                          type="text"
-                          value={editForm.url || item.media[0]?.url || ''}
-                          onChange={(e) => setEditForm({ ...editForm, url: e.target.value })}
-                          className="w-full px-2 py-1 bg-white/10 border border-white/20 rounded text-xs text-white"
-                          placeholder="YouTube URL"
-                        />
-                        <div className="flex gap-1">
-                          <button
-                            onClick={() => {
-                              if (editForm.url && editForm.url !== item.media[0]?.url) {
-                                handleUpdateVideo(item.id, { url: editForm.url, caption: editForm.caption });
-                              } else {
-                                handleUpdateVideo(item.id, { caption: editForm.caption });
-                              }
-                            }}
-                            className="flex-1 py-1 bg-green-500/20 text-green-400 rounded text-xs font-medium"
-                          >
-                            Save
-                          </button>
-                          <button
-                            onClick={() => setEditingId(null)}
-                            className="flex-1 py-1 bg-red-500/20 text-red-400 rounded text-xs font-medium"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="aspect-video">
-                          <iframe
-                            src={item.media[0]?.embedUrl}
-                            title={item.caption || 'YouTube video'}
-                            className="w-full h-full"
-                            allowFullScreen
-                          />
-                        </div>
-                        <div className="p-2">
-                          <p className="text-xs text-white/80 truncate">{item.caption || 'No caption'}</p>
-                          <p className="text-[10px] text-white/40">
-                            {new Date(item.created_at).toLocaleDateString()}
-                          </p>
-                        </div>
-                        <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={() => {
-                              setEditingId(item.id);
-                              setEditForm({ 
-                                caption: item.caption, 
-                                url: item.media[0]?.url 
-                              });
-                            }}
-                            className="p-1.5 bg-blue-500/20 rounded-lg hover:bg-blue-500/30"
-                          >
-                            <Edit className="w-3.5 h-3.5 text-blue-400" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteVideo(item.id)}
-                            className="p-1.5 bg-red-500/20 rounded-lg hover:bg-red-500/30"
-                          >
-                            <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                          </button>
-                        </div>
-                      </>
-                    )}
-                  </motion.div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+        </>
+      )}
 
       {/* Add Modal - Mobile Optimized */}
       <AnimatePresence>
